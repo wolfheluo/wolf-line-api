@@ -127,12 +127,10 @@ def save_message_to_file(user_id, user_name, message, message_type="text"):
         
         # 格式化訊息內容
         if message_type == "text":
-            log_entry = f"[{timestamp}] [{user_name}({user_id})] 文字訊息: {message}\n"
-        elif message_type == "image":
-            log_entry = f"[{timestamp}] [{user_name}({user_id})] 圖片訊息: {message}\n"
+            log_entry = f"[{timestamp}] [{user_name}] 文字訊息: {message}\n"
         else:
-            log_entry = f"[{timestamp}] [{user_name}({user_id})] {message_type}訊息: {message}\n"
-            
+            log_entry = f"[{timestamp}] [{user_name}] {message_type}訊息: {message}\n"
+
         # 追加寫入檔案
         with open(message_file, 'a', encoding='utf-8') as f:
             f.write(log_entry)
@@ -155,7 +153,7 @@ def download_and_save_image(message_id, user_id, user_name):
         
         # 生成唯一的檔案名稱
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}_{user_id}_{uuid.uuid4().hex[:8]}.jpg"
+        filename = f"{timestamp}_{uuid.uuid4().hex[:8]}.jpg"
         file_path = os.path.join('static', 'IMG', filename)
         
         # 儲存圖片
