@@ -128,8 +128,8 @@ def save_message_to_file(user_id, user_name, message, message_type="text"):
         # 格式化訊息內容
         if message_type == "text":
             log_entry = f"[{timestamp}] [{user_name}] 文字訊息: {message}\n"
-        else:
-            log_entry = f"[{timestamp}] [{user_name}] {message_type}訊息: {message}\n"
+        # else:
+        #     log_entry = f"[{timestamp}] [{user_name}] {message_type}訊息: {message}\n"
 
         # 追加寫入檔案
         with open(message_file, 'a', encoding='utf-8') as f:
