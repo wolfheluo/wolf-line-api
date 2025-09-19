@@ -11,7 +11,8 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import (
     MessageEvent,
-    TextMessageContent
+    TextMessageContent,
+    ImageMessageContent
 )
 import json
 import os
@@ -19,6 +20,8 @@ import logging
 from datetime import datetime
 import secrets
 from dotenv import load_dotenv
+import requests
+import uuid
 
 # 載入環境變數
 load_dotenv()
@@ -35,10 +38,6 @@ class Config:
     LINE_BOT_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_BOT_CHANNEL_ACCESS_TOKEN')
     LINE_BOT_CHANNEL_SECRET = os.getenv('LINE_BOT_CHANNEL_SECRET')
     
-    # 檔案上傳設定
-    UPLOAD_FOLDER = 'static/uploads'
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB
     
     # Flask 伺服器設定
     FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
@@ -81,9 +80,6 @@ def dated_url_for(endpoint, **values):
             return f'/line-api-wolf/static/{filename}'
     return url_for(endpoint, **values)
 
-# 建立必要的資料夾
-os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
-os.makedirs('data', exist_ok=True)
 
 # 初始化 LINE Bot API
 try:
@@ -117,6 +113,64 @@ def save_users(users_data):
     except Exception as e:
         logger.error(f"儲存用戶資料時發生錯誤: {str(e)}")
         return False
+
+def save_message_to_file(user_id, user_name, message, message_type="text"):
+    """儲存訊息到檔案"""
+    try:
+        message_file = os.path.join('static', 'message.txt')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 確保目錄存在
+        os.makedirs('static', exist_ok=True)
+        
+        # 格式化訊息內容
+        if message_type == "text":
+            log_entry = f"[{timestamp}] [{user_name}({user_id})] 文字訊息: {message}\n"
+        elif message_type == "image":
+            log_entry = f"[{timestamp}] [{user_name}({user_id})] 圖片訊息: {message}\n"
+        else:
+            log_entry = f"[{timestamp}] [{user_name}({user_id})] {message_type}訊息: {message}\n"
+            
+        # 追加寫入檔案
+        with open(message_file, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+            
+        logger.info(f"成功儲存訊息到 {message_file}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"儲存訊息到檔案時發生錯誤: {str(e)}")
+        return False
+
+def download_and_save_image(message_id, user_id, user_name):
+    """下載並儲存圖片"""
+    try:
+        # 確保 static/IMG 目錄存在
+        os.makedirs('static/IMG', exist_ok=True)
+        
+        # 獲取圖片內容
+        message_content = line_bot_api.get_message_content(message_id)
+        
+        # 生成唯一的檔案名稱
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{user_id}_{uuid.uuid4().hex[:8]}.jpg"
+        file_path = os.path.join('static', 'IMG', filename)
+        
+        # 儲存圖片
+        with open(file_path, 'wb') as f:
+            for chunk in message_content.iter_content():
+                f.write(chunk)
+                
+        logger.info(f"成功儲存圖片到 {file_path}")
+        
+        # 同時記錄到訊息檔案
+        save_message_to_file(user_id, user_name, f"圖片已儲存為 static/IMG/{filename}", "image")
+        
+        return filename
+        
+    except Exception as e:
+        logger.error(f"下載並儲存圖片時發生錯誤: {str(e)}")
+        return None
 
 
 
@@ -155,11 +209,6 @@ def record_user(user_id, display_name=None):
     except Exception as e:
         logger.error(f"記錄用戶資訊時發生錯誤: {str(e)}")
         return False
-
-
-
-
-
 
 
 # LINE Bot Webhook 路由
@@ -201,9 +250,20 @@ def handle_message(event):
         
         logger.info(f"收到 LINE 訊息: {user_message} (用戶ID: {user_id})")
         
+        # 獲取用戶名稱
+        display_name = "未知用戶"
+        try:
+            profile = line_bot_api.get_profile(user_id)
+            display_name = profile.display_name
+        except Exception as e:
+            logger.warning(f"無法獲取用戶 {user_id} 的個人資料: {str(e)}")
+        
         # 記錄用戶資訊
-        if not record_user(user_id):
+        if not record_user(user_id, display_name):
             logger.warning(f"記錄用戶 {user_id} 資訊失敗")
+
+        # 儲存訊息到檔案
+        save_message_to_file(user_id, display_name, user_message, "text")
 
         # 回覆訊息
         reply_token = event.reply_token
@@ -217,6 +277,47 @@ def handle_message(event):
         
     except Exception as e:
         logger.error(f"處理 LINE 訊息時發生錯誤: {str(e)}", exc_info=True)
+
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image(event):
+    """處理圖片訊息"""
+    try:
+        # 獲取用戶 ID 和訊息 ID
+        user_id = event.source.user_id
+        message_id = event.message.id
+        
+        logger.info(f"收到 LINE 圖片訊息 (用戶ID: {user_id}, 訊息ID: {message_id})")
+        
+        # 獲取用戶名稱
+        display_name = "未知用戶"
+        try:
+            profile = line_bot_api.get_profile(user_id)
+            display_name = profile.display_name
+        except Exception as e:
+            logger.warning(f"無法獲取用戶 {user_id} 的個人資料: {str(e)}")
+        
+        # 記錄用戶資訊
+        if not record_user(user_id, display_name):
+            logger.warning(f"記錄用戶 {user_id} 資訊失敗")
+
+        # 下載並儲存圖片
+        saved_filename = download_and_save_image(message_id, user_id, display_name)
+        
+        # 回覆訊息
+        reply_token = event.reply_token
+        if saved_filename:
+            reply_message = TextMessage(text=f"收到你的圖片！已儲存為: {saved_filename}")
+        else:
+            reply_message = TextMessage(text="收到你的圖片，但儲存時發生錯誤。")
+        
+        # 發送回覆
+        line_bot_api.reply_message(
+            ReplyMessageRequest(reply_token=reply_token, messages=[reply_message])
+        )
+        logger.info(f"成功回覆用戶 {user_id} 的圖片訊息")
+        
+    except Exception as e:
+        logger.error(f"處理 LINE 圖片訊息時發生錯誤: {str(e)}", exc_info=True)
 
 
 
