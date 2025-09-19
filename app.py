@@ -7,7 +7,8 @@ from linebot.v3.messaging import (
     MessagingApi,
     Configuration,
     ReplyMessageRequest,
-    TextMessage
+    TextMessage,
+    MessagingApiBlob
 )
 from linebot.v3.webhooks import (
     MessageEvent,
@@ -86,6 +87,7 @@ try:
     configuration = Configuration(access_token=Config.LINE_BOT_CHANNEL_ACCESS_TOKEN)
     api_client = ApiClient(configuration)
     line_bot_api = MessagingApi(api_client)
+    line_bot_blob_api = MessagingApiBlob(api_client)
     handler = WebhookHandler(Config.LINE_BOT_CHANNEL_SECRET)
     logger.info("LINE Bot API 初始化成功")
 except Exception as e:
@@ -148,8 +150,8 @@ def download_and_save_image(message_id, user_id, user_name):
         # 確保 static/IMG 目錄存在
         os.makedirs('static/IMG', exist_ok=True)
         
-        # 獲取圖片內容
-        message_content = line_bot_api.get_message_content(message_id)
+        # 獲取圖片內容 - 使用 MessagingApiBlob
+        message_content = line_bot_blob_api.get_message_content(message_id)
         
         # 生成唯一的檔案名稱
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -158,8 +160,7 @@ def download_and_save_image(message_id, user_id, user_name):
         
         # 儲存圖片
         with open(file_path, 'wb') as f:
-            for chunk in message_content.iter_content():
-                f.write(chunk)
+            f.write(message_content)
                 
         logger.info(f"成功儲存圖片到 {file_path}")
         
